@@ -1,6 +1,7 @@
 import os
 from dotenv import load_dotenv
 import telebot
+from telebot import types
 import requests
 import urllib
 
@@ -8,10 +9,12 @@ load_dotenv()
 API_KEY = os.getenv('API_KEY')
 DEEPL_KEY = os.getenv('DEEPL_KEY')
 GOOGLE_SEARCH_KEY = os.getenv('GOOGLE_SEARCH_KEY')
+GPT_KEY = os.getenv('GPT_KEY')
 USERS = [int(x) for x in os.getenv('USERS').split(',')]
 bot = telebot.TeleBot(API_KEY)
 
 def validate_user(message):
+    print(message.chat.id)
     if message.chat.id in USERS:
         pass
     else:
@@ -30,6 +33,27 @@ def translate(text, fromLang, toLang):
     response = requests.post(url, params=params)
     return response.json()['translations'][0]['text']
 
+def gpt(prompt, engine='text-davinci-002', temperature=0.1, stop=None, max_tokens=200):
+    if stop is None:
+        stop = ['\n\n']
+    headers = {
+        'Content-Type': 'application/json',
+        'Authorization': f'{GPT_KEY}'
+    }
+    payload = {
+      "model":engine,
+      "prompt":prompt,
+      "temperature":temperature,
+      "max_tokens":max_tokens,
+      "top_p":1,
+      "frequency_penalty":0,
+      "presence_penalty":0,
+      "stop":stop
+    }
+    print(payload)
+    response = requests.post('https://api.openai.com/v1/completions', json=payload, headers=headers)
+    print(response.json())
+    return response.json()['choices'][0]['text']
 ############
 # translate
 @bot.message_handler(commands=['tocn'])
@@ -72,6 +96,194 @@ def translate_usage(message):
 @bot.message_handler(commands=['gpt'])
 def gpt_help(message):
     validate_user(message)
+    help_message = "Usage: /[command] [prompt] -t [temperature] -s [stop tokens] -m [max tokens]\n\n"
+    help_message += "/davinci [prompt]: Get a completion from text-davinci-002\n"
+    help_message += "/curie [prompt]: Get a completion from text-curie-001\n"
+    help_message += "/babbage [prompt]: Get a completion from text-babbage-001\n\n"
+    help_message += "=== optional flags ===\n"
+    help_message += "-t [temperature]: Set the temperature (0~1, default to 0.1)\n"
+    help_message += "-s [stop]: Set the stop token, seperated by comma (default to [\"\\n\\n\\n\\n\"])\n"
+    help_message += "-m [max_tokens]: Set the max tokens (default to 490)\n\n"
+    help_message += "=== example ===\n"
+    help_message += "/davinci What is the meaning of life? -m 100 -s [\"Hello world!\",\'\\n\']\n"
+    # /davinci What is the meaning of life -t 0.5 -m 100 -s ["Hello world!","\n"] ?
+    help_message += "--Calls Davinci-002 with temperature 0.5 and max tokens 100\n"
+    help_message += "--and with stop token \"Hello world!\" and line break"
+    bot.send_message(message.chat.id, help_message)
+
+def parse_request(message: str) -> dict:
+    request = {}
+    rest = message[:]
+
+    if ' -t ' in message:
+        try:
+            request['temperature'] = float(message.split(' -t ')[1].split(' ')[0])
+            # remove temperature flag and its argument from rest
+            rest = rest.split(' -t ')[0]
+        except Exception as e:
+            raise Exception('Invalid temperature: '+str(e))
+
+    if ' -s ' in message:
+        try:
+            after_s_flag = message.split(' -s ')[1]
+            if after_s_flag[0] != '[':
+                stack = []
+                s_result = []
+                for i in after_s_flag:
+                    if i == '"' and i in stack:
+                        s_result.append(''.join(stack[1:]))
+                        request['stop'] = s_result
+                        break
+                    else:
+                        stack.append(i)
+            else:
+                inside_sq_bracket = after_s_flag[1:].split(']')[0]
+                elements = [x[1:-1] for x in inside_sq_bracket.split('",')]
+                request['stop'] = elements
+            rest = rest.split(' -s ')[0]
+        except Exception as e:
+            raise Exception('Invalid stop token: '+str(e))
+
+    if ' -m ' in message:
+        try:
+            request['max_tokens'] = int(message.split(' -m ')[1].split(' ')[0])
+            rest = rest.split(' -m ')[0]
+        except Exception as e:
+            raise Exception('Invalid max tokens: '+str(e))
+
+    request['prompt'] = rest
+    return request
+
+def gpt_request(message: str, engine: str) -> tuple[str, int]:
+    request = parse_request(message)
+    if 'temperature' not in request:
+        request['temperature'] = 0.1
+    if 'max_tokens' not in request:
+        request['max_tokens'] = 200
+    if 'stop' not in request:
+        request['stop'] = ['\n\n\n\n']
+    return gpt(request['prompt'], engine, request['temperature'], request['stop'], request['max_tokens']), len(request['prompt'])
+
+@bot.message_handler(commands=['davinci'])
+def davinci(message):
+    validate_user(message)
+    try:
+        response, prompt_length = gpt_request(message.text[len('/davinci'):], 'text-davinci-002')
+        bot.reply_to(message, response)
+        cost = (((len(response)+prompt_length)/4)/1000)*0.06
+        bot.send_message(message.chat.id, 'Estimate Cost: $'+str(cost))
+    except Exception as e:
+        bot.reply_to(message, 'Error: ' + str(e))
+
+@bot.message_handler(commands=['curie'])
+def curie(message):
+    validate_user(message)
+    try:
+        response, prompt_length = gpt_request(message.text[len('/curie'):], 'text-curie-001')
+        bot.reply_to(message, response)
+        cost = (((len(response)+prompt_length)/4)/1000)*0.006
+        bot.send_message(message.chat.id, 'Estimate Cost: $'+str(cost))
+    except Exception as e:
+        bot.reply_to(message, 'Error: ' + str(e))
+
+@bot.message_handler(commands=['babbage'])
+def babbage(message):
+    validate_user(message)
+    try:
+        response, prompt_length = gpt_request(message.text[len('/babbage'):], 'text-babbage-001')
+        bot.reply_to(message, response)
+        cost = (((len(response)+prompt_length)/4)/1000)*0.0012
+        bot.send_message(message.chat.id, 'Estimate Cost: $'+str(cost))
+    except Exception as e:
+        bot.reply_to(message, 'Error: ' + str(e))
+
+############
+# GPT-3 applications
+
+@bot.message_handler(commands=['philo'])
+def philosopher(message):
+    validate_user(message)
+    try:
+        prompt = f"""Below is a paragraph generated by a philosopher, which sees the human world from the outside, without the prejudices of human experience. Fully neutral and objective, the philosopher sees the world as is. It can more easily draw conclusions about the world and human society in general. 
+The topic provided by the human is "{message.text[len('/philo'):]}" to which the philosopher responds with deep thought
+
+Hmmm, interesting topic. Here is my response after a long time of thinking:
+
+Let's think step by step."""
+        response = gpt(prompt, 'text-davinci-002', 0.5, ['\n\n\n\n'], 400)
+        # split response into paragraphs and send each paragraph separately
+        for paragraph in response.split('\n\n'):
+            bot.send_message(message.chat.id, paragraph)
+        cost = (((len(response)+len(prompt))/4)/1000)*0.06
+        bot.send_message(message.chat.id, 'Estimate Cost: $'+str(cost))
+    except Exception as e:
+        bot.reply_to(message, 'Error: ' + str(e))
+
+@bot.message_handler(commands=['thera'])
+def therapist(message):
+    # if user provided only the command
+    if len(message.text) == len('/thera'):
+        bot.send_message(message.chat.id, 'Hi there, I am the therapist. I can help you with your problems. Just send me a message and I will help you.')
+        return
+
+    # else
+    bot.reply_to(message, 'Thanks for the message 😊! Please bear with me while I am typing 👩‍💻.')
+    validate_user(message)
+    try:
+        # read client profile from thera_profile.txt
+        with open('thera_profile.txt', 'r') as f:
+            therapist_profile = f.read()
+        prompt = f"""Client Profile:
+{therapist_profile}
+
+Below is a conversation between the client and a therapist who is also a mental health professional and has a vast knowledge of mental processes. She is helpful, creative, clever, and very friendly. After providing help, she updates client's profile under "Updated Client Profile:" to follow up the latest status of the client if necessary. 
+The topic provided by the client this time is "{message.text[len('/thera'):]}" to which the therapist responds with deep thought and professionalism in a friendly voice.
+
+Thank you for sharing me that.
+
+Let's think step by step."""
+        response = gpt(prompt, 'text-davinci-002', 0.5, ['\n\n\n\n',"\nClient Profile:"], 400)
+
+        cost = (((len(response)+len(prompt))/4)/1000)*0.06
+        bot.send_message(message.chat.id, 'Estimate Cost: $'+str(cost))
+
+        # split response and updated client profile
+        sp = response.split('Updated Client Profile:\n')
+        pure_response = sp[0]
+
+        # send response paragraph by paragraph
+        for paragraph in pure_response.split('\n\n'):
+            if paragraph:
+                bot.send_message(message.chat.id, paragraph)
+
+        # if there is an update on client profile...
+        if len(sp)>1:
+            updated_client_profile = response.split('Updated Client Profile:\n')[1]
+            # send updated client profile
+            bot.send_message(message.chat.id, 'The therapist has updated your client profile:')
+            bot.send_message(message.chat.id, updated_client_profile)
+            # ask do you want to update client profile?
+            bot.send_message(message.chat.id, 'Do you accept your updated client profile? (y/n)')
+            def client_profile_handler(profile, isAccept):
+                if isAccept == 'y':
+                    with open('thera_profile.txt', 'w') as file:
+                        file.write(profile)
+                    bot.send_message(message.chat.id, 'Thank you for updating your client profile.')
+                else:
+                    bot.send_message(message.chat.id, 'Sure! Let\'s keep it as it is.')
+            bot.register_next_step_handler(message, lambda msg: client_profile_handler(updated_client_profile, msg.text))
+
+
+    except Exception as e:
+        bot.reply_to(message, 'Error: ' + str(e))
+
+@bot.message_handler(commands=['gptapp'])
+def gpt_app_help(message):
+    validate_user(message)
+    help_message = "/philo [question] - Ask a philosopher\n"
+    help_message += "/thera [question] - Ask a therapist\n"
+    bot.send_message(message.chat.id, help_message)
+
 
 
 ############
@@ -102,16 +314,13 @@ def ucl_search(message):
             'q': q
         }
         response = requests.get(url, params=params).json()
-        bot.send_message(message.chat.id, response['items'][1]['link'])
         bot.send_message(message.chat.id, response['items'][0]['link'])
-        # display best result LAST: reachable by my thumb
     except Exception as e:
         bot.reply_to(message, 'Error: ' + str(e))
 ############
 # /start /help
 @bot.message_handler(commands=['start', 'help'])
 def greet(message):
-    from telebot import types
     validate_user(message)
 
     response = "Hi there, try these commands:\n"
@@ -120,17 +329,29 @@ def greet(message):
     response += "(/translate - show translate help and usage)\n"
     response += "====GPT-3====\n"
     response += "(/gpt show GPT help)\n"
+    response += "(/gptapp show GPT-app help)\n"
     response += "====UCL====\n"
     response += "(/ucl - show UCL help)\n"
+    response += "====Other====\n"
+    response += "/hide - hide keyboard markup\n"
 
     markup = types.ReplyKeyboardMarkup()
     itemHelp = types.KeyboardButton('/help')
     itemTrUsage = types.KeyboardButton('/translate')
     itemGPT = types.KeyboardButton('/gpt')
+    itemGPTApp = types.KeyboardButton('/gptapp')
     itemUCL = types.KeyboardButton('/ucl')
-    markup.add(itemHelp, itemTrUsage, itemGPT, itemUCL)
+    itemHide = types.KeyboardButton('/hide')
+    markup.add(itemHelp, itemTrUsage, itemGPT, itemGPTApp, itemUCL, itemHide)
 
     bot.send_message(message.chat.id, response, reply_markup=markup)
+
+# /hide
+@bot.message_handler(commands=['hide'])
+def hide_keys(message):
+    validate_user(message)
+    markup = types.ReplyKeyboardRemove()
+    bot.send_message(message.chat.id, 'Sure!', reply_markup=markup)
 
 ############
 # /echo
