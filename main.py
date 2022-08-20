@@ -53,7 +53,7 @@ def gpt(prompt, engine='text-davinci-002', temperature=0.1, stop=None, max_token
     print(payload)
     response = requests.post('https://api.openai.com/v1/completions', json=payload, headers=headers)
     print(response.json())
-    return response.json()['choices'][0]['text']
+    return response.json()['choices'][0]['text'], response.json()['usage']['total_tokens']
 ############
 # translate
 @bot.message_handler(commands=['tocn'])
@@ -162,7 +162,7 @@ def gpt_request(message: str, engine: str) -> tuple[str, int]:
         request['max_tokens'] = 200
     if 'stop' not in request:
         request['stop'] = ['\n\n\n\n']
-    return gpt(request['prompt'], engine, request['temperature'], request['stop'], request['max_tokens']), len(request['prompt'])
+    return gpt(request['prompt'], engine, request['temperature'], request['stop'], request['max_tokens'])
 
 @bot.message_handler(commands=['davinci'])
 def davinci(message):
@@ -170,7 +170,7 @@ def davinci(message):
     try:
         response, prompt_length = gpt_request(message.text[len('/davinci'):], 'text-davinci-002')
         bot.reply_to(message, response)
-        cost = (((len(response)+prompt_length)/4)/1000)*0.06
+        cost = (prompt_length/1000)*0.06
         bot.send_message(message.chat.id, 'Estimate Cost: $'+str(cost))
     except Exception as e:
         bot.reply_to(message, 'Error: ' + str(e))
@@ -181,7 +181,7 @@ def curie(message):
     try:
         response, prompt_length = gpt_request(message.text[len('/curie'):], 'text-curie-001')
         bot.reply_to(message, response)
-        cost = (((len(response)+prompt_length)/4)/1000)*0.006
+        cost = (prompt_length/1000)*0.006
         bot.send_message(message.chat.id, 'Estimate Cost: $'+str(cost))
     except Exception as e:
         bot.reply_to(message, 'Error: ' + str(e))
@@ -192,7 +192,7 @@ def babbage(message):
     try:
         response, prompt_length = gpt_request(message.text[len('/babbage'):], 'text-babbage-001')
         bot.reply_to(message, response)
-        cost = (((len(response)+prompt_length)/4)/1000)*0.0012
+        cost = (prompt_length/1000)*0.0012
         bot.send_message(message.chat.id, 'Estimate Cost: $'+str(cost))
     except Exception as e:
         bot.reply_to(message, 'Error: ' + str(e))
@@ -210,11 +210,11 @@ The topic provided by the human is "{message.text[len('/philo'):]}" to which the
 Hmmm, interesting topic. Here is my response after a long time of thinking:
 
 Let's think step by step."""
-        response = gpt(prompt, 'text-davinci-002', 0.5, ['\n\n\n\n'], 400)
+        response, total_tokens = gpt(prompt, 'text-davinci-002', 0.5, ['\n\n\n\n'], 400)
         # split response into paragraphs and send each paragraph separately
         for paragraph in response.split('\n\n'):
             bot.send_message(message.chat.id, paragraph)
-        cost = (((len(response)+len(prompt))/4)/1000)*0.06
+        cost = (total_tokens/1000)*0.06
         bot.send_message(message.chat.id, 'Estimate Cost: $'+str(cost))
     except Exception as e:
         bot.reply_to(message, 'Error: ' + str(e))
@@ -227,7 +227,7 @@ def therapist(message):
         return
 
     # else
-    bot.reply_to(message, 'Thanks for the message 😊! Please bear with me while I am typing 👩‍💻.')
+    bot.reply_to(message, 'Thanks for the message😊! Please bear with me while I am typing 👩‍💻.')
     validate_user(message)
     try:
         # read client profile from thera_profile.txt
@@ -236,15 +236,13 @@ def therapist(message):
         prompt = f"""Client Profile:
 {therapist_profile}
 
-Below is a conversation between the client and a therapist who is also a mental health professional and has a vast knowledge of mental processes. She is helpful, creative, clever, and very friendly. After providing help, she updates client's profile under "Updated Client Profile:" to follow up the latest status of the client if necessary. 
+Below is a paragraph from a therapist who is also a mental health professional and has a vast knowledge of mental processes to her client. She is helpful, creative, clever, and very friendly. After providing help, she updates client's profile under "Updated Client Profile:" to follow up the latest status of the client if necessary. 
 The topic provided by the client this time is "{message.text[len('/thera'):]}" to which the therapist responds with deep thought and professionalism in a friendly voice.
 
-Thank you for sharing me that.
+Thanks for sharing your problems with me! Let's think step by step."""
+        response, total_tokens = gpt(prompt, 'text-davinci-002', 0.5, ['\n\n\n\n',"\nClient Profile:"], 400)
 
-Let's think step by step."""
-        response = gpt(prompt, 'text-davinci-002', 0.5, ['\n\n\n\n',"\nClient Profile:"], 400)
-
-        cost = (((len(response)+len(prompt))/4)/1000)*0.06
+        cost = (total_tokens/1000)*0.06
         bot.send_message(message.chat.id, 'Estimate Cost: $'+str(cost))
 
         # split response and updated client profile
@@ -364,13 +362,13 @@ def echo_message(message):
 # /kill this bot service
 @bot.message_handler(commands=['kill'])
 def kill_service(message):
-    def kill_service_confirm(message):
-        if message.text == 'y':
+    def kill_service_confirm(message_):
+        if message_.text == 'y':
             bot.stop_bot()
-        elif message.text == 'n':
-            bot.send_message(message.chat.id, 'Cancelled')
+        elif message_.text == 'n':
+            bot.send_message(message_.chat.id, 'Cancelled')
         else:
-            bot.send_message(message.chat.id, 'Invalid command')
+            bot.send_message(message_.chat.id, 'Invalid command')
     validate_user(message)
     # ask if him serious, if yes, run bot.stop_bot()
     bot.send_message(message.chat.id, 'This shuts down your entire bot service. May need tremendous effort to restart.')
