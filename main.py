@@ -239,7 +239,10 @@ def therapist(message):
 Below is a paragraph from a therapist who is also a mental health professional and has a vast knowledge of mental processes to her client. She is helpful, creative, clever, and very friendly. After providing help, she updates client's profile under "Updated Client Profile:" to follow up the latest status of the client if necessary. 
 The topic provided by the client this time is "{message.text[len('/thera'):]}" to which the therapist responds with deep thought and professionalism in a friendly voice.
 
-Thanks for sharing your problems with me! Let's think step by step."""
+
+Thanks for sharing your problems with me! 
+
+Let's think step by step."""
         response, total_tokens = gpt(prompt, 'text-davinci-002', 0.5, ['\n\n\n\n',"\nClient Profile:"], 400)
 
         cost = (total_tokens/1000)*0.06
