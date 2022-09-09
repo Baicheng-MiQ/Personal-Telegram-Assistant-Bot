@@ -246,7 +246,7 @@ Let's think step by step."""
         response, total_tokens = gpt(prompt, 'text-davinci-002', 0.5, ['\n\n\n\n',"\nClient Profile:"], 400)
 
         cost = (total_tokens/1000)*0.06
-        bot.send_message(message.chat.id, 'Estimate Cost: $'+str(cost))
+        bot.send_message(message.chat.id, 'Estimate Cost: $'+str(cost)[:4])
 
         # split response and updated client profile
         sp = response.split('Updated Client Profile:\n')
@@ -255,7 +255,10 @@ Let's think step by step."""
         # send response paragraph by paragraph
         for paragraph in pure_response.split('\n\n'):
             if paragraph:
-                bot.send_message(message.chat.id, paragraph)
+                try:
+                    bot.send_message(message.chat.id, paragraph)
+                except Exception as e:
+                    bot.send_message(message.chat.id, 'Hmm, '+str(e))
 
         # if there is an update on client profile...
         if len(sp)>1:
