@@ -281,6 +281,30 @@ Let's think step by step."""
     except Exception as e:
         bot.reply_to(message, 'Error: ' + str(e))
 
+@bot.message_handler(commands=['reply'])
+def flirt(message):
+    validate_user(message)
+    try:
+        prompt = f"""This is a teen's conversation on a dating app.
+They use a lot of Internet slang.
+They are really smart, they understand each other well.
+They have a good vibe with each other.
+They are skilled in social interactions and can easily attract the attention of others.
+They are very charming and can easily make friends. 
+They are also very good at flirting in a polite way.
+
+Tinder conversation:
+Girl: {message.text[len('/reply'):]}
+Boy:"""
+        response, total_tokens = gpt(prompt, 'text-davinci-002', 0.5, ['\n\n\n\n'], 400)
+        # split response into paragraphs and send each paragraph separately
+        bot.send_message(message.chat.id, response)
+        cost = (total_tokens/1000)*0.06
+        bot.send_message(message.chat.id, 'Estimate Cost: $'+str(cost))
+    except Exception as e:
+        bot.reply_to(message, 'Error: ' + str(e))
+
+
 @bot.message_handler(commands=['gptapp'])
 def gpt_app_help(message):
     validate_user(message)
