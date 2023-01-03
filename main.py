@@ -33,7 +33,7 @@ def translate(text, fromLang, toLang):
     response = requests.post(url, params=params)
     return response.json()['translations'][0]['text']
 
-def gpt(prompt, engine='text-davinci-002', temperature=0.1, stop=None, max_tokens=200):
+def gpt(prompt, engine='text-davinci-003', temperature=0.1, stop=None, max_tokens=200):
     if stop is None:
         stop = ['\n\n']
     headers = {
