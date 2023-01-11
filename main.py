@@ -56,7 +56,7 @@ def gpt(prompt, engine='text-davinci-003', temperature=0.1, stop=None, max_token
     return response.json()['choices'][0]['text'], response.json()['usage']['total_tokens']
 ############
 # translate
-@bot.message_handler(commands=['tocn'])
+@bot.message_handler(commands=['tocn', 'toch'])
 def translate_to_chinese(message):
     validate_user(message)
     try:
@@ -168,9 +168,9 @@ def gpt_request(message: str, engine: str) -> tuple[str, int]:
 def davinci(message):
     validate_user(message)
     try:
-        response, prompt_length = gpt_request(message.text[len('/davinci'):], 'text-davinci-002')
+        response, prompt_length = gpt_request(message.text[len('/davinci'):], 'text-davinci-003')
         bot.reply_to(message, response)
-        cost = (prompt_length/1000)*0.06
+        cost = (prompt_length/1000)*0.02
         bot.send_message(message.chat.id, 'Estimate Cost: $'+str(cost))
     except Exception as e:
         bot.reply_to(message, 'Error: ' + str(e))
@@ -181,7 +181,7 @@ def curie(message):
     try:
         response, prompt_length = gpt_request(message.text[len('/curie'):], 'text-curie-001')
         bot.reply_to(message, response)
-        cost = (prompt_length/1000)*0.006
+        cost = (prompt_length/1000)*0.0002
         bot.send_message(message.chat.id, 'Estimate Cost: $'+str(cost))
     except Exception as e:
         bot.reply_to(message, 'Error: ' + str(e))
@@ -192,7 +192,7 @@ def babbage(message):
     try:
         response, prompt_length = gpt_request(message.text[len('/babbage'):], 'text-babbage-001')
         bot.reply_to(message, response)
-        cost = (prompt_length/1000)*0.0012
+        cost = (prompt_length/1000)*0.0005
         bot.send_message(message.chat.id, 'Estimate Cost: $'+str(cost))
     except Exception as e:
         bot.reply_to(message, 'Error: ' + str(e))
@@ -210,7 +210,7 @@ The topic provided by the human is "{message.text[len('/philo'):]}" to which the
 Hmmm, interesting topic. Here is my response after a long time of thinking:
 
 Let's think step by step."""
-        response, total_tokens = gpt(prompt, 'text-davinci-002', 0.5, ['\n\n\n\n'], 400)
+        response, total_tokens = gpt(prompt, 'text-davinci-003', 0.5, ['\n\n\n\n'], 400)
         # split response into paragraphs and send each paragraph separately
         for paragraph in response.split('\n\n'):
             bot.send_message(message.chat.id, paragraph)
@@ -243,7 +243,7 @@ The topic provided by the client this time is "{message.text[len('/thera'):]}" t
 Thanks for sharing your problems with me!
 
 Let's think step by step."""
-        response, total_tokens = gpt(prompt, 'text-davinci-002', 0.5, ['\n\n\n\n',"\nClient Profile:"], 400)
+        response, total_tokens = gpt(prompt, 'text-davinci-003', 0.5, ['\n\n\n\n',"\nClient Profile:"], 400)
 
         cost = (total_tokens/1000)*0.06
         bot.send_message(message.chat.id, 'Estimate Cost: $'+str(cost)[:4])
@@ -296,7 +296,7 @@ They are also very good at flirting in a polite way.
 Tinder conversation:
 Girl: {message.text[len('/reply'):]}
 Boy:"""
-        response, total_tokens = gpt(prompt, 'text-davinci-002', 0.5, ['\n\n\n\n'], 400)
+        response, total_tokens = gpt(prompt, 'text-davinci-003', 0.5, ['\n\n\n\n', 'Girl:'], 400)
         # split response into paragraphs and send each paragraph separately
         bot.send_message(message.chat.id, response)
         cost = (total_tokens/1000)*0.06
