@@ -4,12 +4,16 @@ import telebot
 from telebot import types
 import requests
 import urllib
+import openai
+from Conversation import Conversation
+
 
 load_dotenv()
 API_KEY = os.getenv('API_KEY')
 DEEPL_KEY = os.getenv('DEEPL_KEY')
 GOOGLE_SEARCH_KEY = os.getenv('GOOGLE_SEARCH_KEY')
 GPT_KEY = os.getenv('GPT_KEY')
+openai.api_key = GPT_KEY[7:]
 USERS = [int(x) for x in os.getenv('USERS').split(',')]
 bot = telebot.TeleBot(API_KEY)
 
@@ -219,39 +223,55 @@ Let's think step by step."""
     except Exception as e:
         bot.reply_to(message, 'Error: ' + str(e))
 
+therapy_conversation = None
+
 @bot.message_handler(commands=['thera'])
 def therapist(message):
+    global therapy_conversation # set global because we want to keep the conversation state
+
     # if user provided only the command
-    if len(message.text) == len('/thera'):
+    if message.text == '/thera':
         bot.send_message(message.chat.id, 'Hi there, I am the therapist. I can help you with your problems. Just send me a message and I will help you.')
         return
 
     # else
-    bot.reply_to(message, 'Thanks for the message😊! Please bear with me while I am typing 👩‍💻.')
     validate_user(message)
     try:
-        # read client profile from thera_profile.txt
-        with open('thera_profile.txt', 'r') as f:
-            therapist_profile = f.read()
-        prompt = f"""Client Profile:
-{therapist_profile}
+        if message.text=='/thera end':
+            therapy_conversation = None
+            bot.send_message(message.chat.id, 'Thanks for talking to me. I hope I helped you. If you want to talk to me again, just type /thera. ')
+            bot.send_message(message.chat.id, '😊')
+            return
 
-Below is a paragraph from a therapist who is also a mental health professional and has a vast knowledge of mental processes to her client. She is helpful, creative, clever, and very friendly. 
-The topic provided by the client this time is "{message.text[len('/thera'):]}" to which the therapist responds with deep thought and professionalism in a friendly voice.
+        if therapy_conversation is None: # if conversation is not started
+            bot.send_message(message.chat.id, 'Thanks for the message 😊! Please bear with me while I am typing 👩‍💻.')
+            bot.send_message(message.chat.id,
+                             'I will continue to talk to you, if you say anything after /thera. Simply type "/thera end" to end our conversation anytime')
+            therapy_conversation = Conversation()
+            # read client profile from thera_profile.txt
+            with open('thera_profile.txt', 'r') as f:
+                therapist_profile = f.read()
 
+            first_few_message = [
+                {"role": "system", "content": "You are a therapist who is also a mental health professional and has a vast knowledge of mental processes to her client. You are helpful, creative, clever, and very friendly. You are good at building rapport, providing feedbacks, offering guidance, and offering support."},
+                {"role": "user", "content": f"Here is some basic information about myself: {therapist_profile}"},
+                {"role": "assistant", "content": "Thanks for sharing your problems with me! How can I help you with today?"}
+            ]
 
-Thanks for sharing your problems with me!
+            therapy_conversation.add_messages(first_few_message)
+        # END IF
 
-Let's think step by step."""
-        response, total_tokens = gpt(prompt, 'text-davinci-003', 0.5, ['\n\n\n\n',"\nClient Profile:"], 400)
+        # grab current conversation and add new message
+        therapy_conversation.add_message(role='user', message=message.text[len('/thera'):])
+        raw_response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=therapy_conversation.messages
+        )
+        response = raw_response.choices[0].message
 
-        cost = (total_tokens/1000)*0.06
-        bot.send_message(message.chat.id, 'Estimate Cost: $'+str(cost)[:4])
+        therapy_conversation.add_message(role=response.role, message=response.content)
 
-        # split response and updated client profile
-        sp = response.split('Updated Client Profile:\n')
-        pure_response = sp[0]
-
+        pure_response = response.content
         # send response paragraph by paragraph
         for paragraph in pure_response.split('\n\n'):
             if paragraph:
@@ -260,22 +280,8 @@ Let's think step by step."""
                 except Exception as e:
                     bot.send_message(message.chat.id, 'Hmm, '+str(e))
 
-        # if there is an update on client profile...
-        if len(sp)>1:
-            updated_client_profile = response.split('Updated Client Profile:\n')[1]
-            # send updated client profile
-            bot.send_message(message.chat.id, 'The therapist has updated your client profile:')
-            bot.send_message(message.chat.id, updated_client_profile)
-            # ask do you want to update client profile?
-            bot.send_message(message.chat.id, 'Do you accept your updated client profile? (y/n)')
-            def client_profile_handler(profile, isAccept):
-                if isAccept == 'y':
-                    with open('thera_profile.txt', 'w') as file:
-                        file.write(profile)
-                    bot.send_message(message.chat.id, 'Thank you for updating your client profile.')
-                else:
-                    bot.send_message(message.chat.id, 'Sure! Let\'s keep it as it is.')
-            bot.register_next_step_handler(message, lambda msg: client_profile_handler(updated_client_profile, msg.text))
+        cost = raw_response.usage.total_tokens/1000*0.002
+        bot.send_message(message.chat.id, 'Cost: $'+format(cost, '.5f'))
 
 
     except Exception as e:
