@@ -4,6 +4,8 @@ https://github.com/eternnoir/pyTelegramBotAPI
     pip install python-dotenv
     pip install pytelegrambotapi
     pip install requests
+    pip install --upgrade google-cloud-texttospeech
+    pip install openai
 
 Remove the .empty suffixes, and replace their content with your own. 
 

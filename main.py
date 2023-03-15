@@ -6,12 +6,14 @@ import requests
 import urllib
 import openai
 from Conversation import Conversation
+from google.cloud import texttospeech
 
 
 load_dotenv()
 API_KEY = os.getenv('API_KEY')
 DEEPL_KEY = os.getenv('DEEPL_KEY')
 GOOGLE_SEARCH_KEY = os.getenv('GOOGLE_SEARCH_KEY')
+os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
 GPT_KEY = os.getenv('GPT_KEY')
 openai.api_key = GPT_KEY[7:]
 USERS = [int(x) for x in os.getenv('USERS').split(',')]
@@ -58,6 +60,35 @@ def gpt(prompt, engine='text-davinci-003', temperature=0.1, stop=None, max_token
     response = requests.post('https://api.openai.com/v1/completions', json=payload, headers=headers)
     print(response.json())
     return response.json()['choices'][0]['text'], response.json()['usage']['total_tokens']
+
+def textToSpeech(text: str, path = "thisSpeech.mp3"):
+    """
+    :param text: text to be converted to speech
+    :param path: path to save the mp3 file
+    :return: path to the mp3 file
+    """
+    client = texttospeech.TextToSpeechClient()
+
+    # Set the text input to be synthesized
+    synthesis_input = texttospeech.SynthesisInput(text=text)
+    voice = texttospeech.VoiceSelectionParams(
+        language_code="en-US", name="en-US-Neural2-C"
+    )
+
+    audio_config = texttospeech.AudioConfig(
+        audio_encoding=texttospeech.AudioEncoding.MP3,
+        pitch=0.3,
+    )
+
+    response = client.synthesize_speech(
+        input=synthesis_input, voice=voice, audio_config=audio_config
+    )
+
+    # The response's audio_content is binary.
+    with open(path, "wb") as out:
+        # Write the response to the output file.
+        out.write(response.audio_content)
+        return path
 ############
 # translate
 @bot.message_handler(commands=['tocn', 'toch'])
@@ -210,8 +241,11 @@ def therapist(message):
                 therapist_profile = f.read()
 
             first_few_message = [
-                {"role": "system", "content": "You are a therapist who is also a mental health professional and has a vast knowledge of mental processes to her client. You are helpful, creative, clever, and very friendly. You are good at building rapport, providing feedbacks, offering guidance, and offering support."},
-                {"role": "user", "content": f"Here is some basic information about myself: {therapist_profile}"},
+                {"role": "system", "content": "You are an experienced therapist who is also a mental health professional. "
+                                              "You have a vast knowledge of the mental processes to your clients. "
+                                              "You are helpful, creative, smart, and very friendly. You are good at building rapport, asking right questions, "
+                                              "providing feedbacks, giving guidance, and offering support."},
+                {"role": "user", "content": f"Hi! Here is some basic information about myself: {therapist_profile}"},
                 {"role": "assistant", "content": "Thanks for sharing your problems with me! How can I help you with today?"}
             ]
 
@@ -237,8 +271,19 @@ def therapist(message):
                 except Exception as e:
                     bot.send_message(message.chat.id, 'Hmm, '+str(e))
 
+        import re
+        to_speech_text = re.sub(r'\n(\d.\s)', '\n', pure_response)
+        audio_path = textToSpeech(to_speech_text)
+        if audio_path:
+            with open(audio_path, 'rb') as f:
+                bot.send_voice(message.chat.id, f)
+            # delete audio file
+            os.remove(audio_path)
+
         cost = raw_response.usage.total_tokens/1000*0.002
         bot.send_message(message.chat.id, 'Cost: $'+format(cost, '.5f'))
+
+
 
 
     except Exception as e:
