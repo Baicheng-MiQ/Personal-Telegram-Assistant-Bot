@@ -1,11 +1,7 @@
 # Personal Telegram Assistant Bot
 https://github.com/eternnoir/pyTelegramBotAPI
 ## Install
-    pip install python-dotenv
-    pip install pytelegrambotapi
-    pip install requests
-    pip install --upgrade google-cloud-texttospeech
-    pip install openai
+    pip install python-dotenv pytelegrambotapi requests --upgrade google-cloud-texttospeech openai tiktoken
 
 Remove the .empty suffixes, and replace their content with your own. 
 

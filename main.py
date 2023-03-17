@@ -255,36 +255,34 @@ def therapist(message):
         # grab current conversation and add new message
         therapy_conversation.add_message(role='user', message=message.text[len('/thera'):])
         raw_response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=therapy_conversation.messages
+            model="gpt-4",
+            messages=therapy_conversation.messages,
+            stream=True
         )
-        response = raw_response.choices[0].message
+        full_response = ""
+        full_response_with_meta = None
+        paragraph = ""
+        for response in raw_response:
+            full_response_with_meta = response
+            if 'content' in response.choices[0].delta:
+                paragraph += response.choices[0].delta.content
+                full_response += response.choices[0].delta.content
+                if paragraph.endswith('\n\n'):
+                    bot.send_message(message.chat.id, paragraph[:-2])
+                    paragraph = ""
 
-        therapy_conversation.add_message(role=response.role, message=response.content)
-
-        pure_response = response.content
-        # send response paragraph by paragraph
-        for paragraph in pure_response.split('\n\n'):
-            if paragraph:
-                try:
-                    bot.send_message(message.chat.id, paragraph)
-                except Exception as e:
-                    bot.send_message(message.chat.id, 'Hmm, '+str(e))
+        therapy_conversation.add_message(role="assistant", message=full_response)
 
         import re
-        to_speech_text = re.sub(r'\n(\d.\s)', '\n', pure_response)
+        to_speech_text = re.sub(r'\n(\d.\s)', '\n', full_response)
         audio_path = textToSpeech(to_speech_text)
         if audio_path:
             with open(audio_path, 'rb') as f:
                 bot.send_voice(message.chat.id, f)
             # delete audio file
             os.remove(audio_path)
-
-        cost = raw_response.usage.total_tokens/1000*0.002
+        cost = therapy_conversation.get_cost()
         bot.send_message(message.chat.id, 'Cost: $'+format(cost, '.5f'))
-
-
-
 
     except Exception as e:
         bot.reply_to(message, 'Error: ' + str(e))
