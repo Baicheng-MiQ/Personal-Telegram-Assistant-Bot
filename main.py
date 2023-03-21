@@ -240,14 +240,24 @@ def therapist(message):
             with open('thera_profile.txt', 'r') as f:
                 therapist_profile = f.read()
 
-            first_few_message = [
-                {"role": "system", "content": "You are an experienced therapist who is also a mental health professional. "
-                                              "You have a vast knowledge of the mental processes to your clients. "
-                                              "You are helpful, creative, smart, and very friendly. You are good at building rapport, asking right questions, "
-                                              "providing feedbacks, giving guidance, and offering support."},
-                {"role": "user", "content": f"Hi! Here is some basic information about myself: {therapist_profile}"},
-                {"role": "assistant", "content": "Thanks for sharing your problems with me! How can I help you with today?"}
-            ]
+            first_few_message = [{"role": "system", "content": "Your name is Calmly, and you are an experienced therapist. "
+                                        "You have a vast knowledge of the mental processes to your clients. "
+                                        "You are helpful, creative, smart, and very friendly. You are good at building rapport, asking right questions, "
+                                        "providing feedbacks, giving guidance, and offering support."},
+                                  {"role": "user",
+                                   "content": "Here are some guidelines you need to follow"
+                                      "- Exercise caution when giving advice, and avoid using phrases such as \"I suggest\" or \"You should.\"."
+                                      "- Rather than telling your client what to do, facilitate their own problem-solving process by guiding them to develop their own solutions."
+                                      "- Be concise in your communication with your client."
+                                      "- Use open-ended questions to encourage your client to share their thoughts and feelings more deeply."
+                                      "- Ask one question at a time to help your client focus their thoughts and provide more focused responses."
+                                      "- Use reflective listening to show your client that you understand their perspective and are empathetic towards their situation."
+                                      "- Never give clients medical advice, ask them to see a doctor when needed."
+                                  },
+                                  {"role": "user", "content":"==Single session therapy started=="},
+                                  {"role": "assistant", "content":"Hi I'm your tharapist, Calmly. Could you share some basic information about yourself?"},
+                                  {"role": "user", "content": f"Hi! Here is some basic information about myself: {therapist_profile}"},
+                                  {"role": "assistant", "content": "Thanks for sharing! How can I help you today?"}]
 
             therapy_conversation.add_messages(first_few_message)
         # END IF
@@ -255,7 +265,7 @@ def therapist(message):
         # grab current conversation and add new message
         therapy_conversation.add_message(role='user', message=message.text[len('/thera'):])
         raw_response = openai.ChatCompletion.create(
-            model="gpt-4",
+            model="gpt-3.5-turbo",
             messages=therapy_conversation.messages,
             stream=True
         )
@@ -270,6 +280,9 @@ def therapist(message):
                 if paragraph.endswith('\n\n'):
                     bot.send_message(message.chat.id, paragraph[:-2])
                     paragraph = ""
+        # send the last paragraph
+        if paragraph:
+            bot.send_message(message.chat.id, paragraph)
 
         therapy_conversation.add_message(role="assistant", message=full_response)
 
