@@ -301,7 +301,7 @@ def advisor(message):
     global advisor_conversation # set global because we want to keep the conversation state
     bot.send_chat_action(message.chat.id, 'typing')
     # if user provided only the command
-    if message.text == '/thera':
+    if message.text == '/advi':
         bot.send_message(message.chat.id, 'Hi there, I am the therapist. I can help you with your problems. Just send me a message and I will help you.')
         return
 
@@ -521,6 +521,7 @@ def gpt_app_help(message):
     help_message += "/reply [question] - Reply to a message\n"
     help_message += "/email [email] - Reply to an email\n"
     help_message += "/thera [question] - Ask a therapist\n"
+    help_message += "/advi [question] - Ask an advisor\n"
     bot.send_message(message.chat.id, help_message)
 
 
