@@ -2,6 +2,7 @@ import tiktoken
 class Conversation:
     def __init__(self):
         self.messages = []
+        self.total_cost = 0
 
     def add_message(self, role, message):
         if role not in ["user", "assistant", "system"]:
@@ -35,6 +36,7 @@ class Conversation:
         price_k_tokens_prompt = 0.03
         price_k_tokens_completion = 0.03
         cost = (len(prompt_tokens)/1000 * price_k_tokens_prompt) + (len(completion_tokens)/1000 * price_k_tokens_completion)
+        self.total_cost += cost
         return cost
 
     def reset(self):

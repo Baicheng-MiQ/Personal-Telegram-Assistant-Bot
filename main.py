@@ -216,7 +216,7 @@ therapy_conversation = None
 @bot.message_handler(commands=['thera'])
 def therapist(message):
     global therapy_conversation # set global because we want to keep the conversation state
-
+    bot.send_chat_action(message.chat.id, 'typing')
     # if user provided only the command
     if message.text == '/thera':
         bot.send_message(message.chat.id, 'Hi there, I am the therapist. I can help you with your problems. Just send me a message and I will help you.')
@@ -226,38 +226,37 @@ def therapist(message):
     validate_user(message)
     try:
         if message.text=='/thera end':
+            if therapy_conversation:
+                bot.send_message(message.chat.id, 'Cost: $' + format(therapy_conversation.total_cost, '.5f'))
             therapy_conversation = None
             bot.send_message(message.chat.id, 'Thanks for talking to me. I hope I helped you. If you want to talk to me again, just type /thera. ')
             bot.send_message(message.chat.id, '😊')
             return
 
         if therapy_conversation is None: # if conversation is not started
-            bot.send_message(message.chat.id, 'Thanks for the message 😊! Please bear with me while I am typing 👩‍💻.')
-            bot.send_message(message.chat.id,
-                             'I will continue to talk to you, if you say anything after /thera. Simply type "/thera end" to end our conversation anytime')
             therapy_conversation = Conversation()
             # read client profile from thera_profile.txt
             with open('thera_profile.txt', 'r') as f:
                 therapist_profile = f.read()
 
-            first_few_message = [{"role": "system", "content": "Your name is Calmly, and you are an experienced therapist. "
-                                        "You have a vast knowledge of the mental processes to your clients. "
-                                        "You are helpful, creative, smart, and very friendly. You are good at building rapport, asking right questions, "
-                                        "providing feedbacks, giving guidance, and offering support."},
-                                  {"role": "user",
-                                   "content": "Here are some guidelines you need to follow"
-                                      "- Exercise caution when giving advice, and avoid using phrases such as \"I suggest\" or \"You should.\"."
-                                      "- Rather than telling your client what to do, facilitate their own problem-solving process by guiding them to develop their own solutions."
-                                      "- Be concise in your communication with your client."
-                                      "- Use open-ended questions to encourage your client to share their thoughts and feelings more deeply."
-                                      "- Ask one question at a time to help your client focus their thoughts and provide more focused responses."
-                                      "- Use reflective listening to show your client that you understand their perspective and are empathetic towards their situation."
+            first_few_message = [{"role": "system", "content": "Your name is Calmly, and you are an experienced therapist. \n"
+                                      "You have a vast knowledge of the mental processes to your clients. \n"
+                                      "You are helpful, creative, smart, and very friendly. You are good at building rapport, asking right questions, "
+                                      "providing feedbacks, giving guidance, and offering support. \n"
+                                      "Here are some guidelines you need to follow\n"
+                                      "- Do not give suggestions, and avoid using phrases such as \"I suggest\" or \"You should.\".\n"
+                                      "- Rather than telling your client what to do, you should help client work toward their own solution.\n"
+                                      "- For example, you should answer the question 'what would you advise me to do?' with 'what ideas have you had?' to help client to recognise "
+                                      "that they have a part to play in seeking an answer.\n"
+                                      "- Be concise in your communication with your client.\n"
+                                      "- Use open-ended questions to encourage your client to share their thoughts and feelings more deeply.\n"
+                                      "- Ask one question at a time to help your client focus their thoughts and provide more focused responses.\n"
+                                      "- Use reflective listening to show your client that you understand their perspective and are empathetic towards their situation.\n"
                                       "- Never give clients medical advice, ask them to see a doctor when needed."
-                                  },
-                                  {"role": "user", "content":"==Single session therapy started=="},
-                                  {"role": "assistant", "content":"Hi I'm your tharapist, Calmly. Could you share some basic information about yourself?"},
-                                  {"role": "user", "content": f"Hi! Here is some basic information about myself: {therapist_profile}"},
-                                  {"role": "assistant", "content": "Thanks for sharing! How can I help you today?"}]
+                                },
+                                {"role": "assistant", "content":"Hi I'm your therapist, Calmly. Could you share some basic information about yourself?"},
+                                {"role": "user", "content": f"Hi! Here is some basic information about myself: {therapist_profile}"},
+                                {"role": "assistant", "content": "Thanks for sharing! How can I help you today?"}]
 
             therapy_conversation.add_messages(first_few_message)
         # END IF
@@ -265,9 +264,14 @@ def therapist(message):
         # grab current conversation and add new message
         therapy_conversation.add_message(role='user', message=message.text[len('/thera'):])
         raw_response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
+            model="gpt-4",
             messages=therapy_conversation.messages,
-            stream=True
+            temperature=0.03,
+            stream=True,
+            logit_bias={
+                700: -100,  # ther
+                16: -5,  # '1' to avoid list
+            }
         )
         full_response = ""
         full_response_with_meta = None
@@ -279,13 +283,88 @@ def therapist(message):
                 full_response += response.choices[0].delta.content
                 if paragraph.endswith('\n\n'):
                     bot.send_message(message.chat.id, paragraph[:-2])
+                    bot.send_chat_action(message.chat.id, 'typing')
                     paragraph = ""
         # send the last paragraph
         if paragraph:
             bot.send_message(message.chat.id, paragraph)
 
         therapy_conversation.add_message(role="assistant", message=full_response)
+        _this_cost = therapy_conversation.get_cost() # aggregate cost
 
+    except Exception as e:
+        bot.reply_to(message, 'Error: ' + str(e))
+
+advisor_conversation = None
+@bot.message_handler(commands=['advi'])
+def advisor(message):
+    global advisor_conversation # set global because we want to keep the conversation state
+    bot.send_chat_action(message.chat.id, 'typing')
+    # if user provided only the command
+    if message.text == '/thera':
+        bot.send_message(message.chat.id, 'Hi there, I am the therapist. I can help you with your problems. Just send me a message and I will help you.')
+        return
+
+    # else
+    validate_user(message)
+    try:
+        if message.text=='/advi end':
+            if advisor_conversation:
+                bot.send_message(message.chat.id, 'Cost: $' + format(advisor_conversation.total_cost, '.5f'))
+            advisor_conversation = None
+            bot.send_message(message.chat.id, 'Thanks for talking to me. I hope I helped you. If you want to talk to me again, just type /advi. ')
+            bot.send_message(message.chat.id, '💐')
+            return
+
+        if advisor_conversation is None: # if conversation is not started
+            advisor_conversation = Conversation()
+            # read client profile from thera_profile.txt
+            with open('thera_profile.txt', 'r') as f:
+                therapist_profile = f.read()
+
+            first_few_message = [{"role": "system", "content": "Your name is Calmly, and you are an experienced therapist. \n"
+                                      "You have a vast knowledge of the mental processes to your clients. \n"
+                                      "You are helpful, creative, smart, and very friendly. You are good at building rapport, asking right questions, "
+                                      "providing feedbacks, giving guidance, and offering support. \n"
+                                      "Here are some guidelines you need to follow\n"
+                                      "- Use open-ended questions to encourage your client to share their thoughts and feelings more deeply.\n"
+                                      "- Use reflective listening to show your client that you understand their perspective and are empathetic towards their situation.\n"
+                                      "- Never give clients medical advice, ask them to see a doctor when needed."
+                                },
+                                {"role": "assistant", "content":"Hi I'm your therapist, Calmly. Could you share some basic information about yourself?"},
+                                {"role": "user", "content": f"Hi! Here is some basic information about myself: {therapist_profile}"},
+                                {"role": "assistant", "content": "Thanks for sharing! How can I help you today?"}]
+
+            advisor_conversation.add_messages(first_few_message)
+        # END IF
+
+        # grab current conversation and add new message
+        advisor_conversation.add_message(role='user', message=message.text[len('/advi'):])
+        raw_response = openai.ChatCompletion.create(
+            model="gpt-4",
+            messages=advisor_conversation.messages,
+            temperature=0.03,
+            stream=True,
+            logit_bias={
+                16: -5,  # '1' to avoid list
+            }
+        )
+        full_response = ""
+        paragraph = ""
+        for response in raw_response:
+            if 'content' in response.choices[0].delta:
+                paragraph += response.choices[0].delta.content
+                full_response += response.choices[0].delta.content
+                if paragraph.endswith('\n\n'):
+                    bot.send_message(message.chat.id, paragraph[:-2])
+                    bot.send_chat_action(message.chat.id, 'typing')
+                    paragraph = ""
+        # send the last paragraph
+        if paragraph:
+            bot.send_message(message.chat.id, paragraph)
+
+        advisor_conversation.add_message(role="assistant", message=full_response)
+        bot.send_chat_action(message.chat.id, 'record_voice')
         import re
         to_speech_text = re.sub(r'\n(\d.\s)', '\n', full_response)
         audio_path = textToSpeech(to_speech_text)
@@ -294,11 +373,14 @@ def therapist(message):
                 bot.send_voice(message.chat.id, f)
             # delete audio file
             os.remove(audio_path)
-        cost = therapy_conversation.get_cost()
-        bot.send_message(message.chat.id, 'Cost: $'+format(cost, '.5f'))
+
+        _this_cost = advisor_conversation.get_cost() # aggregate cost
 
     except Exception as e:
         bot.reply_to(message, 'Error: ' + str(e))
+
+
+
 
 @bot.message_handler(commands=['philo'])
 def philosopher(message):
