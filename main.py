@@ -5,7 +5,7 @@ from telebot import types
 import requests
 import urllib
 import openai
-from Conversation import Conversation
+from Conversation import Conversation, User, Assistant, System
 from google.cloud import texttospeech
 
 
@@ -13,6 +13,7 @@ load_dotenv()
 API_KEY = os.getenv('API_KEY')
 DEEPL_KEY = os.getenv('DEEPL_KEY')
 GOOGLE_SEARCH_KEY = os.getenv('GOOGLE_SEARCH_KEY')
+ELEVEN_LABS_KEY = os.getenv('ELEVEN_LABS_KEY')
 os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
 GPT_KEY = os.getenv('GPT_KEY')
 openai.api_key = GPT_KEY[7:]
@@ -67,28 +68,55 @@ def textToSpeech(text: str, path = "thisSpeech.mp3"):
     :param path: path to save the mp3 file
     :return: path to the mp3 file
     """
-    client = texttospeech.TextToSpeechClient()
 
-    # Set the text input to be synthesized
-    synthesis_input = texttospeech.SynthesisInput(text=text)
-    voice = texttospeech.VoiceSelectionParams(
-        language_code="en-US", name="en-US-Neural2-C"
-    )
+    # client = texttospeech.TextToSpeechClient()
+    #
+    # # Set the text input to be synthesized
+    # synthesis_input = texttospeech.SynthesisInput(text=text)
+    # voice = texttospeech.VoiceSelectionParams(
+    #     language_code="en-US", name="en-US-Neural2-C"
+    # )
+    #
+    # audio_config = texttospeech.AudioConfig(
+    #     audio_encoding=texttospeech.AudioEncoding.MP3,
+    #     pitch=0.3,
+    # )
+    #
+    # response = client.synthesize_speech(
+    #     input=synthesis_input, voice=voice, audio_config=audio_config
+    # )
+    # ABOVE is googled, below is ElevenLabs
+    import requests
+    sound_id = "mE6ZUnCVC8Cl2rEKPE0Z"
 
-    audio_config = texttospeech.AudioConfig(
-        audio_encoding=texttospeech.AudioEncoding.MP3,
-        pitch=0.3,
-    )
+    url = "https://api.elevenlabs.io/v1/text-to-speech/" + sound_id
 
-    response = client.synthesize_speech(
-        input=synthesis_input, voice=voice, audio_config=audio_config
-    )
+    payload = {
+        "text": f"{text}",
+        "voice_settings": {
+            "stability": 0.8,
+            "similarity_boost": 0.7
+        }
+    }
+    headers = {
+        "xi-api-key": ELEVEN_LABS_KEY,
+        "Content-Type": "application/json",
+        "accept": "audio/mpeg"
+    }
 
+    response = requests.request("POST", url, json=payload, headers=headers)
+
+    if response.status_code == 200:
     # The response's audio_content is binary.
-    with open(path, "wb") as out:
-        # Write the response to the output file.
-        out.write(response.audio_content)
-        return path
+        with open(path, "wb") as out:
+            # Write the response to the output file.
+            out.write(response.content)
+            return path
+    else:
+        raise Exception("Error: Failed to get audio")
+
+
+
 ############
 # translate
 @bot.message_handler(commands=['tocn', 'toch'])
@@ -210,13 +238,17 @@ def davinci(message):
     except Exception as e:
         bot.reply_to(message, 'Error: ' + str(e))
 
+
+
+
+
 ############
 # GPT-3 applications
 therapy_conversation = None
 @bot.message_handler(commands=['thera'])
 def therapist(message):
     global therapy_conversation # set global because we want to keep the conversation state
-    bot.send_chat_action(message.chat.id, 'typing')
+    bot.send_chat_action(message.chat.id, 'typing', timeout=60)
     # if user provided only the command
     if message.text == '/thera':
         bot.send_message(message.chat.id, 'Hi there, I am the therapist. I can help you with your problems. Just send me a message and I will help you.')
@@ -239,7 +271,7 @@ def therapist(message):
             with open('thera_profile.txt', 'r') as f:
                 therapist_profile = f.read()
 
-            first_few_message = [{"role": "system", "content": "Your name is Calmly, and you are an experienced therapist. \n"
+            first_few_message = [System("Your name is Calmly, and you are an experienced therapist. \n"
                                       "You have a vast knowledge of the mental processes to your clients. \n"
                                       "You are helpful, creative, smart, and very friendly. You are good at building rapport, asking right questions, "
                                       "providing feedbacks, giving guidance, and offering support. \n"
@@ -252,20 +284,21 @@ def therapist(message):
                                       "- Use open-ended questions to encourage your client to share their thoughts and feelings more deeply.\n"
                                       "- Ask one question at a time to help your client focus their thoughts and provide more focused responses.\n"
                                       "- Use reflective listening to show your client that you understand their perspective and are empathetic towards their situation.\n"
-                                      "- Never give clients medical advice, ask them to see a doctor when needed."
-                                },
-                                {"role": "assistant", "content":"Hi I'm your therapist, Calmly. Could you share some basic information about yourself?"},
-                                {"role": "user", "content": f"Hi! Here is some basic information about myself: {therapist_profile}"},
-                                {"role": "assistant", "content": "Thanks for sharing! How can I help you today?"}]
+                                      "- Never give clients medical advice, ask them to see a doctor when needed."),
+                                Assistant("Hi I'm your therapist, Calmly. Could you share some basic information about yourself?"),
+                                User(f"Hi! Here is some basic information about myself: {therapist_profile}"),
+                                Assistant("Thanks for sharing! How can I help you today?")
+                                ]
 
             therapy_conversation.add_messages(first_few_message)
         # END IF
 
         # grab current conversation and add new message
-        therapy_conversation.add_message(role='user', message=message.text[len('/thera'):])
+        therapy_conversation.add_message(User(message.text[len('/thera'):]))
+
         raw_response = openai.ChatCompletion.create(
             model="gpt-4",
-            messages=therapy_conversation.messages,
+            messages=therapy_conversation.to_openai(),
             temperature=0.03,
             stream=True,
             logit_bias={
@@ -283,13 +316,13 @@ def therapist(message):
                 full_response += response.choices[0].delta.content
                 if paragraph.endswith('\n\n'):
                     bot.send_message(message.chat.id, paragraph[:-2])
-                    bot.send_chat_action(message.chat.id, 'typing')
+                    bot.send_chat_action(message.chat.id, 'typing', timeout=60)
                     paragraph = ""
         # send the last paragraph
         if paragraph:
             bot.send_message(message.chat.id, paragraph)
 
-        therapy_conversation.add_message(role="assistant", message=full_response)
+        therapy_conversation.add_message(Assistant(full_response))
         _this_cost = therapy_conversation.get_cost() # aggregate cost
 
     except Exception as e:
@@ -299,7 +332,7 @@ advisor_conversation = None
 @bot.message_handler(commands=['advi'])
 def advisor(message):
     global advisor_conversation # set global because we want to keep the conversation state
-    bot.send_chat_action(message.chat.id, 'typing')
+    bot.send_chat_action(message.chat.id, 'typing', timeout=60)
     # if user provided only the command
     if message.text == '/advi':
         bot.send_message(message.chat.id, 'Hi there, I am the therapist. I can help you with your problems. Just send me a message and I will help you.')
@@ -322,32 +355,28 @@ def advisor(message):
             with open('thera_profile.txt', 'r') as f:
                 therapist_profile = f.read()
 
-            first_few_message = [{"role": "system", "content": "Your name is Calmly, and you are an experienced therapist. \n"
+            first_few_message = [System("Your name is Calmly, and you are an experienced therapist. \n"
                                       "You have a vast knowledge of the mental processes to your clients. \n"
                                       "You are helpful, creative, smart, and very friendly. You are good at building rapport, asking right questions, "
                                       "providing feedbacks, giving guidance, and offering support. \n"
                                       "Here are some guidelines you need to follow\n"
                                       "- Use open-ended questions to encourage your client to share their thoughts and feelings more deeply.\n"
-                                      "- Use reflective listening to show your client that you understand their perspective and are empathetic towards their situation.\n"
-                                      "- Never give clients medical advice, ask them to see a doctor when needed."
-                                },
-                                {"role": "assistant", "content":"Hi I'm your therapist, Calmly. Could you share some basic information about yourself?"},
-                                {"role": "user", "content": f"Hi! Here is some basic information about myself: {therapist_profile}"},
-                                {"role": "assistant", "content": "Thanks for sharing! How can I help you today?"}]
+                                      "- Use reflective listening to show your client that you understand their perspective and are empathetic towards their situation.\n"),
+                                 Assistant("Hi I'm your therapist, Calmly. Could you share some basic information about yourself?"),
+                                 User(f"Hi! Here is some basic information about myself: {therapist_profile}"),
+                                 Assistant("Thanks for sharing! How can I help you today?")
+                                 ]
 
             advisor_conversation.add_messages(first_few_message)
         # END IF
 
         # grab current conversation and add new message
-        advisor_conversation.add_message(role='user', message=message.text[len('/advi'):])
+        advisor_conversation.add_message(User(message.text[len('/advi'):]))
         raw_response = openai.ChatCompletion.create(
             model="gpt-4",
-            messages=advisor_conversation.messages,
-            temperature=0.03,
+            messages=advisor_conversation.to_openai(),
+            temperature=0.3,
             stream=True,
-            logit_bias={
-                16: -5,  # '1' to avoid list
-            }
         )
         full_response = ""
         paragraph = ""
@@ -357,16 +386,17 @@ def advisor(message):
                 full_response += response.choices[0].delta.content
                 if paragraph.endswith('\n\n'):
                     bot.send_message(message.chat.id, paragraph[:-2])
-                    bot.send_chat_action(message.chat.id, 'typing')
+                    bot.send_chat_action(message.chat.id, 'typing', timeout=60)
                     paragraph = ""
         # send the last paragraph
         if paragraph:
             bot.send_message(message.chat.id, paragraph)
 
-        advisor_conversation.add_message(role="assistant", message=full_response)
-        bot.send_chat_action(message.chat.id, 'record_voice')
+        advisor_conversation.add_message(Assistant(full_response))
+        bot.send_chat_action(message.chat.id, 'record_voice', timeout=60)
         import re
         to_speech_text = re.sub(r'\n(\d.\s)', '\n', full_response)
+
         audio_path = textToSpeech(to_speech_text)
         if audio_path:
             with open(audio_path, 'rb') as f:
@@ -378,8 +408,6 @@ def advisor(message):
 
     except Exception as e:
         bot.reply_to(message, 'Error: ' + str(e))
-
-
 
 
 @bot.message_handler(commands=['philo'])
@@ -404,7 +432,7 @@ Let's think step by step."""
 
 philo_conversation = None
 @bot.message_handler(commands=['philob']) # philo beta
-def philosopher(message):
+def philosopher_beta(message):
     validate_user(message)
     try:
         global philo_conversation # set global because we want to keep the conversation state
@@ -419,20 +447,20 @@ def philosopher(message):
             bot.send_message(message.chat.id, 'I will continue to talk to you, if you say anything after /philo. Simply type "/philo end" to end our conversation anytime')
             philo_conversation = Conversation()
             first_few_message = [
-                {"role": "system", "content": "You are now a philosopher, you see the human world from the outside, without the prejudices of human experience. Fully neutral and objective, you see the world as is. You can more easily draw conclusions about the world and human society in general."}
+                System("You are now a philosopher, you see the human world from the outside, without the prejudices of human experience. Fully neutral and objective, you see the world as is. You can more easily draw conclusions about the world and human society in general.")
             ]
             philo_conversation.add_messages(first_few_message)
         # END IF
 
         # grab current conversation and add new message
-        philo_conversation.add_message(role='user', message=message.text[len('/philob'):])
+        philo_conversation.add_message(User(message.text[len('/philob'):]))
         raw_response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
-            messages=philo_conversation.messages
+            messages=philo_conversation.to_openai()
         )
 
         response = raw_response.choices[0].message
-        philo_conversation.add_message(role=response.role, message=response.content)
+        philo_conversation.add_message(Assistant(response.content))
 
         pure_response = response.content
         # send response paragraph by paragraph
@@ -485,23 +513,23 @@ def email_reply(message):
         if email_conversation is None: # if conversation is not started
             email_conversation = Conversation()
             first_few_message = [
-                {"role": "system", "content": "You are now a computer science student at UCL. You will now reply to any email you receive. You are a very good student, you are very smart and you are very good at programming. You are also very good at writing emails. You are very good at communicating with people. Your emails are very polite and professional."},
-                {"role": "user", "content": message.text[len('/email'):]}
+                System("You are now a computer science student at UCL. You will now reply to any email you receive. You are a very good student, you are very smart and you are very good at programming. You are also very good at writing emails. You are very good at communicating with people. Your emails are very polite and professional."),
+                User(message.text[len('/email'):])
             ]
             email_conversation.add_messages(first_few_message)
             after_receive_email = "Sure, glad to help! In a few words, what's the reply about and what should I include in the reply?"
-            email_conversation.add_message(role='assistant', message=after_receive_email)
+            email_conversation.add_message(Assistant(after_receive_email))
             bot.send_message(message.chat.id, "🧐")
             bot.send_message(message.chat.id, after_receive_email+" Please answer it after /email")
         else:
-            email_conversation.add_message(role='user', message=message.text[len('/email'):])
+            email_conversation.add_message(User(message.text[len('/email'):]))
             raw_response = openai.ChatCompletion.create(
                 model="gpt-3.5-turbo",
-                messages=email_conversation.messages
+                messages=email_conversation.to_openai()
             )
 
             response = raw_response.choices[0].message
-            email_conversation.add_message(role=response.role, message=response.content)
+            email_conversation.add_message(Assistant(response.content))
 
             pure_response = response.content
             # send response paragraph by paragraph
