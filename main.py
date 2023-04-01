@@ -6,6 +6,7 @@ import requests
 import urllib
 import openai
 from Conversation import Conversation, User, Assistant, System
+import random
 from google.cloud import texttospeech
 
 
@@ -306,21 +307,27 @@ def therapist(message):
                 16: -5,  # '1' to avoid list
             }
         )
+
         full_response = ""
-        full_response_with_meta = None
         paragraph = ""
+        this_message = None
         for response in raw_response:
-            full_response_with_meta = response
             if 'content' in response.choices[0].delta:
-                paragraph += response.choices[0].delta.content
-                full_response += response.choices[0].delta.content
+                if paragraph == "":
+                    paragraph += response.choices[0].delta.content
+                    full_response += response.choices[0].delta.content
+                    this_message = bot.send_message(message.chat.id, paragraph)
+                else:
+                    paragraph += response.choices[0].delta.content
+                    full_response += response.choices[0].delta.content
+                    if random.random() < 0.3 or paragraph.endswith('\n\n'):
+                        this_message = bot.edit_message_text(paragraph, message.chat.id, this_message.message_id)
+
                 if paragraph.endswith('\n\n'):
-                    bot.send_message(message.chat.id, paragraph[:-2])
-                    bot.send_chat_action(message.chat.id, 'typing', timeout=60)
                     paragraph = ""
-        # send the last paragraph
-        if paragraph:
-            bot.send_message(message.chat.id, paragraph)
+
+        if paragraph and this_message.text != paragraph:
+            this_message = bot.edit_message_text(paragraph, message.chat.id, this_message.message_id)
 
         therapy_conversation.add_message(Assistant(full_response))
         _this_cost = therapy_conversation.get_cost() # aggregate cost
@@ -380,17 +387,22 @@ def advisor(message):
         )
         full_response = ""
         paragraph = ""
+        this_message = None
         for response in raw_response:
             if 'content' in response.choices[0].delta:
-                paragraph += response.choices[0].delta.content
-                full_response += response.choices[0].delta.content
+                if paragraph == "":
+                    paragraph += response.choices[0].delta.content
+                    full_response += response.choices[0].delta.content
+                    this_message = bot.send_message(message.chat.id, paragraph)
+                else:
+                    paragraph += response.choices[0].delta.content
+                    full_response += response.choices[0].delta.content
+                    if random.random() < 0.3 or paragraph.endswith('\n\n'):
+                        this_message = bot.edit_message_text(paragraph, message.chat.id, this_message.message_id)
+
                 if paragraph.endswith('\n\n'):
-                    bot.send_message(message.chat.id, paragraph[:-2])
-                    bot.send_chat_action(message.chat.id, 'typing', timeout=60)
                     paragraph = ""
-        # send the last paragraph
-        if paragraph:
-            bot.send_message(message.chat.id, paragraph)
+
 
         advisor_conversation.add_message(Assistant(full_response))
         bot.send_chat_action(message.chat.id, 'record_voice', timeout=60)

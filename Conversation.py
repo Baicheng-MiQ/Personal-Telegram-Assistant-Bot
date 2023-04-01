@@ -5,8 +5,8 @@ from typing import Optional
 
 @dataclass
 class Message:
-    role: str
     content: str
+    role: str
 
     def to_dict(self):
         return {
