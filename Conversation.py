@@ -1,9 +1,12 @@
 import tiktoken
 
+from dataclasses import dataclass
+from typing import Optional
+
+@dataclass
 class Message:
-    def __init__(self):
-        self.role = ""
-        self.content = ""
+    role: str
+    content: str
 
     def to_dict(self):
         return {
@@ -11,13 +14,11 @@ class Message:
             "content": self.content
         }
 
-
+@dataclass
 class System(Message):
-    def __init__(self, content, name=None):
-        super().__init__()
-        self.role = "system"
-        self.content = content
-        self.name = name
+    content: str
+    name: Optional[str] = None
+    role: str = "system"
 
     def to_dict(self):
         if self.name is None:
@@ -32,18 +33,15 @@ class System(Message):
                 "content": self.content,
             }
 
-
+@dataclass
 class User(Message):
-    def __init__(self, content):
-        super().__init__()
-        self.role = "user"
-        self.content = content
+    content: str
+    role: str = "user"
 
+@dataclass
 class Assistant(Message):
-    def __init__(self, content):
-        super().__init__()
-        self.role = "assistant"
-        self.content = content
+    content: str
+    role: str = "assistant"
 
 
 class Conversation:
