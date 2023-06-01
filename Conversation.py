@@ -45,7 +45,8 @@ class Assistant(Message):
 
 
 class Conversation:
-    def __init__(self):
+    def __init__(self, model):
+        self.model = model
         self.messages = []
         self.total_cost = 0
 
@@ -69,12 +70,18 @@ class Conversation:
             prompt_text += message.content
         completion_text = self.messages[-1].content
 
-        encoding = tiktoken.encoding_for_model("gpt-4")
+        encoding = tiktoken.encoding_for_model(self.model)
         prompt_tokens = encoding.encode(prompt_text)
         completion_tokens = encoding.encode(completion_text)
 
-        price_k_tokens_prompt = 0.03
-        price_k_tokens_completion = 0.06
+        if self.model == "gpt-4":
+            price_k_tokens_prompt = 0.03
+            price_k_tokens_completion = 0.06
+        elif self.model == "gpt-3.5-turbo":
+            price_k_tokens_prompt = 0.002
+            price_k_tokens_completion = 0.002
+        else:
+            raise ValueError(f"Unknown model {self.model}")
         cost = (len(prompt_tokens)/1000 * price_k_tokens_prompt) + (len(completion_tokens)/1000 * price_k_tokens_completion)
         self.total_cost += cost
         return cost

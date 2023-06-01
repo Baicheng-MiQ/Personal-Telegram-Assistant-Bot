@@ -116,7 +116,19 @@ def textToSpeech(text: str, path = "thisSpeech.mp3"):
     else:
         raise Exception("Error: Failed to get audio")
 
+def md_to_html(md_text: str) -> str:
+  import markdown
+  from markdown.extensions.codehilite import CodeHiliteExtension
 
+  with open("./template.html", 'r') as t:
+    template = t.read()
+
+  # Markdown to HTML conversion
+  html = markdown.markdown(md_text, extensions=[CodeHiliteExtension(), "fenced_code", "tables"])
+
+  # Fill the template with the converted HTML
+  document = template.replace("{content}", html)
+  return document
 
 ############
 # translate
@@ -244,7 +256,170 @@ def davinci(message):
 
 
 ############
-# GPT-3 applications
+# GPT applications
+chat_conversation = None
+@bot.message_handler(commands=['chat']) # vanilla chat
+def chat(message):
+    global chat_conversation # set global because we want to keep the conversation state
+    bot.send_chat_action(message.chat.id, 'typing', timeout=600)
+    # if user provided only the command
+    if message.text == '/chat':
+        bot.send_message(message.chat.id, "Hi there, how can I help you?"
+                                          "\n\nType /chat end to end the conversation."
+                                          "\nType /chat source to get the source code of the last message."
+                                          "\nType /chat html to get the html of the last message.")
+        return
+
+    # else
+    validate_user(message)
+    try:
+        if message.text=='/chat end':
+            if chat_conversation:
+                bot.send_message(message.chat.id, 'Cost: $' + format(chat_conversation.total_cost, '.5f'))
+            chat_conversation = None
+            return
+
+        if message.text=='/chat source':
+            if chat_conversation:
+                bot.send_message(message.chat.id, chat_conversation.messages[-1].content)
+            return
+
+        if message.text=='/chat html':
+            if chat_conversation:
+                html = md_to_html(chat_conversation.messages[-1].content)
+                # save to file and send to user
+                with open('chat.html', 'w') as f:
+                    f.write(html)
+                with open('chat.html', 'rb') as f:
+                    bot.send_document(message.chat.id, f)
+            return
+
+        if message.text=='/chat img':
+            if chat_conversation:
+                from html2image import Html2Image
+                hti = Html2Image()
+                hti.screenshot(html_str=md_to_html(chat_conversation.messages[-1].content), save_as='chat.png',size=(500, 1000))
+                with open('chat.png', 'rb') as f:
+                    bot.send_photo(message.chat.id, f)
+            return
+
+        if chat_conversation is None: # if conversation is not started
+            chat_conversation = Conversation("gpt-4")
+            first_few_message = [System("You are a helpful assistant. Your answer should be concise. "
+                                        "You reply in richly formatted markdown, and write formulae in $\LaTeX$.")]
+            chat_conversation.add_messages(first_few_message)
+
+        # grab current conversation and add new message
+        chat_conversation.add_message(User(message.text[len('/chat'):]))
+        raw_response = openai.ChatCompletion.create(
+            model="gpt-4",
+            messages=chat_conversation.to_openai(),
+            temperature=0.1,
+            stream=True,
+        )
+        full_response = ""
+        this_message = None
+        for response in raw_response:
+            if 'content' in response.choices[0].delta:
+                if full_response == "":
+                    full_response += response.choices[0].delta.content
+                    this_message = bot.send_message(message.chat.id, full_response)
+                else:
+                    full_response += response.choices[0].delta.content
+                    if random.random() < 0.3 and this_message.text.strip() != full_response.strip():
+                        this_message = bot.edit_message_text(full_response, message.chat.id, this_message.message_id)
+
+        if full_response:
+            bot.edit_message_text(full_response, message.chat.id, this_message.message_id, parse_mode='Markdown')
+
+        chat_conversation.add_message(Assistant(full_response))
+        _this_cost = chat_conversation.get_cost() # aggregate cost
+
+    except Exception as e:
+        bot.reply_to(message, 'Error: ' + str(e))
+
+
+chat3_conversation = None
+@bot.message_handler(commands=['chat3']) # vanilla chat3
+def chat(message):
+    global chat3_conversation # set global because we want to keep the conversation state
+    bot.send_chat_action(message.chat.id, 'typing', timeout=600)
+    # if user provided only the command
+    if message.text == '/chat3':
+        bot.send_message(message.chat.id, "Hi there, how can I help you?"
+                                          "\n\nType /chat3 end to end the conversation."
+                                          "\nType /chat3 source to get the source code of the last message."
+                                          "\nType /chat3 html to get the html of the last message.")
+        return
+
+    # else
+    validate_user(message)
+    try:
+        if message.text=='/chat3 end':
+            if chat3_conversation:
+                bot.send_message(message.chat.id, 'Cost: $' + format(chat3_conversation.total_cost, '.5f'))
+            chat3_conversation = None
+            return
+
+        if message.text=='/chat3 source':
+            if chat3_conversation:
+                bot.send_message(message.chat.id, chat3_conversation.messages[-1].content)
+            return
+
+        if message.text=='/chat3 html':
+            if chat3_conversation:
+                html = md_to_html(chat3_conversation.messages[-1].content)
+                # save to file and send to user
+                with open('chat.html', 'w') as f:
+                    f.write(html)
+                with open('chat.html', 'rb') as f:
+                    bot.send_document(message.chat.id, f)
+            return
+
+        if message.text=='/chat3 img':
+            if chat3_conversation:
+                from html2image import Html2Image
+                hti = Html2Image()
+                hti.screenshot(html_str=md_to_html(chat3_conversation.messages[-1].content), save_as='chat.png',size=(500, 1000))
+                with open('chat.png', 'rb') as f:
+                    bot.send_photo(message.chat.id, f)
+            return
+
+        if chat3_conversation is None: # if conversation is not started
+            chat3_conversation = Conversation("gpt-3.5-turbo")
+            first_few_message = [System("You are a helpful assistant. Your answer should be concise. "
+                                        "You reply in richly formatted markdown, and write formulae in $\LaTeX$.")]
+            chat3_conversation.add_messages(first_few_message)
+
+        # grab current conversation and add new message
+        chat3_conversation.add_message(User(message.text[len('/chat3'):]))
+        raw_response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=chat3_conversation.to_openai(),
+            temperature=0.1,
+            stream=True,
+        )
+        full_response = ""
+        this_message = None
+        for response in raw_response:
+            if 'content' in response.choices[0].delta:
+                if full_response == "":
+                    full_response += response.choices[0].delta.content
+                    this_message = bot.send_message(message.chat.id, full_response)
+                else:
+                    full_response += response.choices[0].delta.content
+                    if random.random() < 0.3 and this_message.text.strip() != full_response.strip():
+                        this_message = bot.edit_message_text(full_response, message.chat.id, this_message.message_id)
+
+        if full_response:
+            bot.edit_message_text(full_response, message.chat.id, this_message.message_id, parse_mode='Markdown')
+
+        chat3_conversation.add_message(Assistant(full_response))
+        _this_cost = chat3_conversation.get_cost() # aggregate cost
+
+    except Exception as e:
+        bot.reply_to(message, 'Error: ' + str(e))
+
 therapy_conversation = None
 @bot.message_handler(commands=['thera'])
 def therapist(message):
@@ -267,7 +442,7 @@ def therapist(message):
             return
 
         if therapy_conversation is None: # if conversation is not started
-            therapy_conversation = Conversation()
+            therapy_conversation = Conversation("gpt-4")
             # read client profile from thera_profile.txt
             with open('thera_profile.txt', 'r') as f:
                 therapist_profile = f.read()
@@ -357,7 +532,7 @@ def advisor(message):
             return
 
         if advisor_conversation is None: # if conversation is not started
-            advisor_conversation = Conversation()
+            advisor_conversation = Conversation("gpt-4")
             # read client profile from thera_profile.txt
             with open('thera_profile.txt', 'r') as f:
                 therapist_profile = f.read()
@@ -422,6 +597,87 @@ def advisor(message):
         bot.reply_to(message, 'Error: ' + str(e))
 
 
+cn_therapy_conversation = None
+@bot.message_handler(commands=['zx'])
+def cn_therapy(message):
+    global cn_therapy_conversation # set global because we want to keep the conversation state
+    bot.send_chat_action(message.chat.id, 'typing', timeout=60)
+    # if user provided only the command
+    if message.text == '/zx':
+        bot.send_message(message.chat.id, '嗨！我是你的心理咨询师，我可以帮助你解决你的问题。只要给我发一条消息，我就会帮助你。')
+        return
+
+    validate_user(message)
+    try:
+        if message.text=='/zx end':
+            if cn_therapy_conversation:
+                bot.send_message(message.chat.id, 'Cost: $' + format(cn_therapy_conversation.total_cost, '.5f'))
+            cn_therapy_conversation = None
+            bot.send_message(message.chat.id, '谢谢你和我聊天。希望我能帮到你。如果你想再次和我聊天，只需输入/zx。')
+            bot.send_message(message.chat.id, '😊')
+            return
+
+        if cn_therapy_conversation is None: # if conversation is not started
+            cn_therapy_conversation = Conversation("gpt-4")
+            # read client profile from thera_profile.txt
+            with open('thera_profile.txt', 'r') as f:
+                therapist_profile = f.read()
+            cn_therapist_profile = translate(therapist_profile, 'EN', 'ZH')
+
+            first_few_message = [System("你的名字叫冷静，你是一位经验丰富的心理咨询师。\n"
+                                        "你对客户的心理过程有丰富的知识。\n"
+                                        "你乐于助人，有创造力，聪明，而且非常友好。你善于建立良好的关系，提出正确的问题，提供反馈，给予指导，并提供支持。\n"
+                                        "以下是你需要遵循的一些准则：\n"
+                                        "- 避免给出建议，避免使用 \"我建议 \"或 \"你应该 \"这样的短语。\n"
+                                        "- 你不应该告诉你的来访者该怎么做，而是应该帮助来访者努力实现他们自己的解决方案。\n"
+                                        "- 例如，你应该用 \"你有什么想法？\"来回答 \"你会建议我做什么？\"以帮助来访者认识到是他们自己在寻求答案。\n"
+                                        "- 在与来访者的沟通中要简明扼要。\n"
+                                        "- 使用开放式的问题来鼓励你的来访者更深入地分享他们的想法和感受。\n"
+                                        "- 每次只问一个问题，以帮助你的客户集中他们的思想，并提供更有针对性的回应。\n"
+                                        "- 使用反思性倾听，向来访者表明你理解他们的观点，并对他们的情况抱有同情心。\n"),
+                                 Assistant("你好，我是你的心理咨询师冷静，你可以提供一些信息来帮助我了解你。"),
+                                 User(f"嗨，好的，这是关于我的信息：\n{cn_therapist_profile}"),
+                                 Assistant("谢谢你提供这些信息。你可以告诉我你的问题吗？")]
+            cn_therapy_conversation.add_messages(first_few_message)
+
+        cn_therapy_conversation.add_message(User(message.text[len('/zx'):]))
+        bot.send_chat_action(message.chat.id, 'typing', timeout=60)
+        raw_response = openai.ChatCompletion.create(
+            model="gpt-4",
+            messages=cn_therapy_conversation.to_openai(),
+            temperature=0.03,
+            stream=True,
+        )
+        full_response = ""
+        paragraph = ""
+        this_message = None
+        for response in raw_response:
+            if 'content' in response.choices[0].delta:
+                if paragraph == "":
+                    paragraph += response.choices[0].delta.content
+                    full_response += response.choices[0].delta.content
+                    this_message = bot.send_message(message.chat.id, paragraph)
+                else:
+                    paragraph += response.choices[0].delta.content
+                    full_response += response.choices[0].delta.content
+                    if random.random() < 0.3 or paragraph.endswith('\n\n'):
+                        this_message = bot.edit_message_text(paragraph, message.chat.id, this_message.message_id)
+
+                if paragraph.endswith('\n\n'):
+                    paragraph = ""
+
+        if paragraph and this_message.text != paragraph:
+            this_message = bot.edit_message_text(paragraph, message.chat.id, this_message.message_id)
+
+        cn_therapy_conversation.add_message(Assistant(full_response))
+        _this_cost = cn_therapy_conversation.get_cost()  # aggregate cost
+
+    except Exception as e:
+        bot.reply_to(message, 'Error: ' + str(e))
+
+
+
+
 @bot.message_handler(commands=['philo'])
 def philosopher(message):
     validate_user(message)
@@ -457,7 +713,7 @@ def philosopher_beta(message):
         if philo_conversation is None: # if conversation is not started
             bot.send_message(message.chat.id, 'Thanks for the message 😊! Please bear with me while I am typing 👩‍💻.')
             bot.send_message(message.chat.id, 'I will continue to talk to you, if you say anything after /philo. Simply type "/philo end" to end our conversation anytime')
-            philo_conversation = Conversation()
+            philo_conversation = Conversation("gpt-3.5-turbo")
             first_few_message = [
                 System("You are now a philosopher, you see the human world from the outside, without the prejudices of human experience. Fully neutral and objective, you see the world as is. You can more easily draw conclusions about the world and human society in general.")
             ]
@@ -523,9 +779,11 @@ def email_reply(message):
             bot.send_message(message.chat.id, '🚀')
             return
         if email_conversation is None: # if conversation is not started
-            email_conversation = Conversation()
+            email_conversation = Conversation("gpt-4")
             first_few_message = [
-                System("You are now a computer science student at UCL. You will now reply to any email you receive. You are a very good student, you are very smart and you are very good at programming. You are also very good at writing emails. You are very good at communicating with people. Your emails are very polite and professional."),
+                System("You are now a computer science student at UCL. You will now reply to any email you receive. "
+                       "You are a very good student, you are very smart and you are very good at programming. You are also very good at writing emails. "
+                       "You are very good at communicating with people. Your emails are very polite and professional."),
                 User(message.text[len('/email'):])
             ]
             email_conversation.add_messages(first_few_message)
@@ -536,7 +794,7 @@ def email_reply(message):
         else:
             email_conversation.add_message(User(message.text[len('/email'):]))
             raw_response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
+                model="gpt-4",
                 messages=email_conversation.to_openai()
             )
 
@@ -547,9 +805,9 @@ def email_reply(message):
             # send response paragraph by paragraph
             bot.send_message(message.chat.id, pure_response)
 
-            cost = raw_response.usage.total_tokens/1000*0.002
-            bot.send_message(message.chat.id, 'Cost: $'+format(cost, '.5f'))
-            bot.send_message(message.chat.id, "If you want edit the reply, please type /email again with your request. If you want to end the conversation, please type /email end")
+            bot.send_message(message.chat.id, 'Cost: $'+format(email_conversation.get_cost(), '.5f'))
+            bot.send_message(message.chat.id, "If you want edit the reply, please type /email again with your request. "
+                                              "If you want to end the conversation, please type /email end")
     except Exception as e:
         bot.reply_to(message, 'Error: ' + str(e))
 
@@ -659,6 +917,6 @@ def kill_service(message):
 
 if __name__ == "__main__":
     print("I'm up and running!")
-    bot.send_message(USERS[0], "I'm up and running!")
+    bot.send_message(USERS[0], "<b>Hi, I'm up and running!</b>", parse_mode="HTML")
     bot.infinity_polling()
     bot.send_message(USERS[0], "I'm down!")
