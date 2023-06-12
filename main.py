@@ -7,7 +7,7 @@ import urllib
 import openai
 from Conversation import Conversation, User, Assistant, System
 import random
-from google.cloud import texttospeech
+from JSON_helper import JSON_helper
 
 
 load_dotenv()
@@ -427,7 +427,9 @@ def therapist(message):
     bot.send_chat_action(message.chat.id, 'typing', timeout=60)
     # if user provided only the command
     if message.text == '/thera':
-        bot.send_message(message.chat.id, 'Hi there, I am the therapist. I can help you with your problems. Just send me a message and I will help you.')
+        bot.send_message(message.chat.id,
+                         'Hi there, I am the therapist. I can help you with your problems. '
+                         'Just send me a message and I will help you.')
         return
 
     # else
@@ -437,43 +439,36 @@ def therapist(message):
             if therapy_conversation:
                 bot.send_message(message.chat.id, 'Cost: $' + format(therapy_conversation.total_cost, '.5f'))
             therapy_conversation = None
-            bot.send_message(message.chat.id, 'Thanks for talking to me. I hope I helped you. If you want to talk to me again, just type /thera. ')
+            bot.send_message(message.chat.id, 'Thanks for talking to me. I hope I helped you. '
+                                              'If you want to talk to me again, just type /thera. ')
             bot.send_message(message.chat.id, '😊')
+            return
+
+        if message.text=='/thera source':
+            if therapy_conversation:
+                bot.send_message(message.chat.id, str(therapy_conversation.to_openai()))
             return
 
         if therapy_conversation is None: # if conversation is not started
             therapy_conversation = Conversation("gpt-4")
-            # read client profile from thera_profile.txt
-            with open('thera_profile.txt', 'r') as f:
-                therapist_profile = f.read()
 
-            first_few_message = [System("Your name is Calmly, and you are an experienced therapist. \n"
-                                          "You have a vast knowledge of the mental processes to your clients. \n"
-                                          "You are helpful, creative, smart, and very friendly. You are good at building rapport, asking right questions, "
-                                          "providing feedbacks, giving guidance, and offering support. \n"
-                                          "Here are some guidelines you need to follow\n"
-                                          "- Do not give suggestions, and avoid using phrases such as \"I suggest\" or \"You should.\".\n"
-                                          "- Rather than telling your client what to do, you should help client work toward their own solution.\n"
-                                          "- For example, you should answer the question 'what would you advise me to do?' with 'what ideas have you had?' to help client to recognise "
-                                          "that they have a part to play in seeking an answer.\n"
-                                          "- Be concise in your communication with your client.\n"
-                                          "- Use open-ended questions to encourage your client to share their thoughts and feelings more deeply.\n"
-                                          "- Ask one question at a time to help your client focus their thoughts and provide more focused responses.\n"
-                                          "- Use reflective listening to show your client that you understand their perspective and are empathetic towards their situation.\n"
-                                          "- Never give clients medical advice, ask them to see a doctor when needed."),
-                                Assistant("Hi I'm your therapist, Calmly. Could you share some basic information about yourself?"),
-                                User(f"Hi! Here is some basic information about myself: {therapist_profile}"),
-                                Assistant("Thanks for sharing! How can I help you today?")
-                                ]
+            with open("prompt.txt", "r") as f:
+                prompt = f.read()
 
+            with open("thera_profile.txt", "r") as f:
+                profile = f.read()
+
+            prompt=prompt.replace("{{profile}}", profile)
+
+            first_few_message = [System(prompt)]
             therapy_conversation.add_messages(first_few_message)
         # END IF
 
         # grab current conversation and add new message
         therapy_conversation.add_message(User(message.text[len('/thera'):]))
 
-        raw_response = openai.ChatCompletion.create(
-            model="gpt-4",
+        raw_response  = openai.ChatCompletion.create(
+            model=therapy_conversation.model,
             messages=therapy_conversation.to_openai(),
             temperature=0.03,
             stream=True,
@@ -484,25 +479,58 @@ def therapist(message):
         )
 
         full_response = ""
-        paragraph = ""
         this_message = None
         for response in raw_response:
             if 'content' in response.choices[0].delta:
-                if paragraph == "":
-                    paragraph += response.choices[0].delta.content
-                    full_response += response.choices[0].delta.content
-                    this_message = bot.send_message(message.chat.id, paragraph)
+                full_response += response.choices[0].delta.content
+
+                # finished
+                json_response = JSON_helper(full_response)
+                if json_response.is_valid() and json_response.has_key('possible_client_response') and this_message:
+                    if this_message.text.strip() != json_response.to_dict()['therapist_response'].strip():
+                        this_message = bot.edit_message_text(json_response.to_dict()['therapist_response'],
+                                                             message.chat.id,
+                                                             this_message.message_id)
+                    markup = types.ReplyKeyboardMarkup(
+                        one_time_keyboard=True,
+                        row_width=1,
+                        resize_keyboard=True
+                    )
+                    if json_response.to_dict()['possible_client_response'][0] and\
+                            json_response.to_dict()['possible_client_response'][1]:
+                        res1 = types.KeyboardButton('/thera '+json_response.to_dict()['possible_client_response'][0])
+                        res2 = types.KeyboardButton('/thera '+json_response.to_dict()['possible_client_response'][1])
+                        markup.add(res1, res2)
+                        bot.send_message(message.chat.id, '-', reply_markup=markup)
+
+                # not yet finished
                 else:
-                    paragraph += response.choices[0].delta.content
-                    full_response += response.choices[0].delta.content
-                    if random.random() < 0.3 or paragraph.endswith('\n\n'):
-                        this_message = bot.edit_message_text(paragraph, message.chat.id, this_message.message_id)
+                    json_response = JSON_helper(full_response+"\"}")
+                    # json might only be partially valid, we try to add the rest of the json
+                    # and see if it is valid
+                    if json_response.is_valid() and json_response.has_key('therapist_response'):
+                        # this means that the json is valid, and we can send the message
+                        if json_response.to_dict()['therapist_response'] == "":
+                            continue
+                        if not this_message:
+                            # this means that this is the first message
+                            this_message = bot.send_message(message.chat.id,
+                                                            json_response.to_dict()['therapist_response'])
+                        else:
+                            # not first message
+                            if this_message.text.strip() != json_response.to_dict()['therapist_response'].strip()\
+                                    and random.random() < 0.3:
+                                this_message = bot.edit_message_text(json_response.to_dict()['therapist_response'],
+                                                                     message.chat.id,
+                                                                     this_message.message_id)
+                    else:
+                        # this means that the json is not valid, and we need to wait more of it
+                        continue
 
-                if paragraph.endswith('\n\n'):
-                    paragraph = ""
-
-        if paragraph and this_message.text != paragraph:
-            this_message = bot.edit_message_text(paragraph, message.chat.id, this_message.message_id)
+        # after iterator is done, if nothing sent, there is an error
+        if not this_message:
+            bot.send_message(message.chat.id, "Sorry, I don't understand. Can you rephrase that?")
+            this_message = bot.send_message(message.chat.id, full_response)
 
         therapy_conversation.add_message(Assistant(full_response))
         _this_cost = therapy_conversation.get_cost() # aggregate cost
@@ -572,7 +600,7 @@ def advisor(message):
                 else:
                     paragraph += response.choices[0].delta.content
                     full_response += response.choices[0].delta.content
-                    if random.random() < 0.3 or paragraph.endswith('\n\n'):
+                    if random.random() < 0.3 or paragraph.endswith('\n\n') and this_message.text.strip() != paragraph.strip():
                         this_message = bot.edit_message_text(paragraph, message.chat.id, this_message.message_id)
 
                 if paragraph.endswith('\n\n'):
